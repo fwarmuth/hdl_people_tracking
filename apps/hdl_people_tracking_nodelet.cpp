@@ -2,6 +2,7 @@
 #include <memory>
 #include <iostream>
 #include <boost/format.hpp>
+#include <string>
 
 #include <ros/ros.h>
 #include <pcl_ros/point_cloud.h>
@@ -23,6 +24,9 @@
 #include <kkl/cvk/cvutils.hpp>
 #include <hdl_people_tracking/people_tracker.hpp>
 
+#include <people_msgs/People.h>
+#include <people_msgs/Person.h>
+
 namespace hdl_people_tracking {
 
 class HdlPeopleTrackingNodelet : public nodelet::Nodelet {
@@ -41,6 +45,7 @@ public:
     color_palette = cvk::create_color_palette(16);
 
     tracks_pub = private_nh.advertise<hdl_people_tracking::TrackArray>("tracks", 10);
+    people_pub = private_nh.advertise<people_msgs::People>("lidar_people", 10);
     marker_pub = private_nh.advertise<visualization_msgs::MarkerArray>("markers", 10);
     clusters_sub = nh.subscribe("/hdl_people_detection_nodelet/clusters", 1, &HdlPeopleTrackingNodelet::callback, this);
   }
@@ -57,7 +62,7 @@ private:
     tracker->correct(clusters_msg->header.stamp, clusters_msg->clusters);
 
     // publish tracks msg
-    if(tracks_pub.getNumSubscribers()) {
+    if(tracks_pub.getNumSubscribers() || people_pub.getNumSubscribers()) {
       tracks_pub.publish(create_tracks_msg(clusters_msg->header));
     }
 
@@ -68,14 +73,26 @@ private:
   }
 
   hdl_people_tracking::TrackArrayConstPtr create_tracks_msg(const std_msgs::Header& header) const {
+    // Create new msgs;
     hdl_people_tracking::TrackArrayPtr tracks_msg(new hdl_people_tracking::TrackArray());
+    // use given header 
     tracks_msg->header = header;
 
+    // resize new msg to fit the current tracked people
     tracks_msg->tracks.resize(tracker->people.size());
+
+    // create people msgs
+    people_msgs::People peopleMsg;
+    peopleMsg.header = header;
+
+    // for each person in people
     for(int i=0; i<tracker->people.size(); i++) {
+      // get track
       const auto& track = tracker->people[i];
+      // get corresponding track msg
       auto& track_msg = tracks_msg->tracks[i];
 
+      // fill data
       track_msg.id = track->id();
       track_msg.age = (track->age(header.stamp)).toSec();
       track_msg.pos.x = track->position().x();
@@ -99,10 +116,26 @@ private:
         }
       }
 
+      // fill data person
+      // create person to pushback
+      people_msgs::Person p;
+      p.name = std::to_string(track_msg.id);
+      p.position = track_msg.pos;
+      p.velocity.x = track_msg.vel.x;
+      p.velocity.y = track_msg.vel.y;
+      p.velocity.z = track_msg.vel.z;
+      // float64             reliability
+      // string[]            tagnames
+      // string[]            tags
+      peopleMsg.people.push_back(p);
+
       const Cluster* associated = boost::any_cast<Cluster>(&track->lastAssociated());
       if(!associated) {
         continue;
       }
+  
+      //publish peopleMsg
+      people_pub.publish(peopleMsg);
 
       track_msg.associated.resize(1);
       track_msg.associated[0] = (*associated);
@@ -183,6 +216,7 @@ private:
   ros::NodeHandle private_nh;
 
   ros::Publisher tracks_pub;
+  ros::Publisher people_pub;
   ros::Publisher marker_pub;
   ros::Subscriber clusters_sub;
 
