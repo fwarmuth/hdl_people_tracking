@@ -60,10 +60,10 @@ public:
     // subscribers
     globalmap_sub = nh.subscribe("/globalmap", 1, &HdlPeopleDetectionNodelet::globalmap_callback, this);
     if(private_nh.param<bool>("static_sensor", false)) {
-      static_points_sub = mt_nh.subscribe("/velodyne_points", 32, &HdlPeopleDetectionNodelet::callback_static, this);
+      static_points_sub = mt_nh.subscribe("/filtered_points", 32, &HdlPeopleDetectionNodelet::callback_static, this);
     } else {
       odom_sub.reset(new message_filters::Subscriber<nav_msgs::Odometry>(mt_nh, "/odom", 20));
-      points_sub.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(mt_nh, "/velodyne_points", 20));
+      points_sub.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(mt_nh, "/filtered_points", 20));
       sync.reset(new message_filters::TimeSynchronizer<nav_msgs::Odometry, sensor_msgs::PointCloud2>(*odom_sub, *points_sub, 20));
       sync->registerCallback(boost::bind(&HdlPeopleDetectionNodelet::callback, this, _1, _2));
     }
@@ -112,6 +112,8 @@ private:
     // background subtraction and people detection
     auto filtered = backsub->filter(cloud);
     auto clusters = detector->detect(filtered);
+    
+
 
     publish_msgs(points_msg->header.stamp, filtered, clusters);
   }
